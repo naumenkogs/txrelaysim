@@ -52,7 +52,7 @@ init.2.out_peers 8
 init.2.reachable_count 1500
 init.2.in_flood_delay 2000
 init.2.out_flood_delay 1000
-init.2.all_reconcile true
+init.2.reconciliation_percent 20
 init.2.reconciliation_interval 1000
 init.2.in_flood_peers_percent 10
 init.2.out_flood_peers_percent 10

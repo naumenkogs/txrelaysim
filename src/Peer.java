@@ -76,7 +76,7 @@ public class Peer implements CDProtocol, EDProtocol
 
 	@Override
 	public void nextCycle(Node node, int pid) {
-		if (reconcile) {
+		if (reconcile && reconSets.containsKey(node)) {
 			// If reconciliation is enabled on this node, it should periodically request reconciliations
 			// with a queue of its reconciling peers.
 			long curTime = CommonState.getTime();
@@ -154,6 +154,7 @@ public class Peer implements CDProtocol, EDProtocol
 
 	private void handleReconRequest(Node node, int pid, SimpleMessage message) {
 		Node sender = message.getSender();
+		if (!reconcile || !reconSets.containsKey(sender)) return;
 
 		long curTime = CommonState.getTime();
 		HashSet<Integer> reconSet = reconSets.get(sender);
@@ -169,6 +170,7 @@ public class Peer implements CDProtocol, EDProtocol
 	// txId exchange is done here implicitly without actually sending messages, because a it can be
 	// easily modeled and accounted at this node locally.
 	private void handleSketchMessage(Node node, int pid, Node sender, ArrayList<Integer> remoteSet) {
+		if (!reconcile || !reconSets.containsKey(sender)) return;
 		Set<Integer> localSet = reconSets.get(sender);
 		int shared = 0, usMiss = 0, theyMiss = 0;
 		// Handle transactions the local (sketch receiving) node doesn't have.
@@ -254,6 +256,8 @@ public class Peer implements CDProtocol, EDProtocol
 	}
 
 	private void handleReconFinalization(Node node, int pid, ArrayListMessage message) {
+		Node sender = message.getSender();
+		if (!reconcile || !reconSets.containsKey(sender)) return;
 		invsSent += (Integer)message.getArrayList().get(0);
 		shortInvsSent += (Integer)message.getArrayList().get(1);
 	}
@@ -266,8 +270,8 @@ public class Peer implements CDProtocol, EDProtocol
 		if (!peerKnowsTxs.get(recipient).contains(txId)) {
 			peerKnowsTxs.get(recipient).add(txId);
 
-			Boolean flood = false;
-			if (reconcile) {
+			Boolean flood = !reconcile || !reconSets.containsKey(recipient);
+			if (reconcile && reconSets.containsKey(recipient)) {
 				int indexAmongOutbounds = outboundPeers.indexOf(recipient);
 				int indexAmongInbounds = inboundPeers.indexOf(recipient);
 				if (indexAmongOutbounds != -1) {
@@ -293,6 +297,7 @@ public class Peer implements CDProtocol, EDProtocol
 			}
 
 			if (flood) {
+				removeFromReconSet(node, txId, recipient);
 				IntMessage inv = new IntMessage(SimpleEvent.INV, node, txId);
 				((Transport)recipient.getProtocol(FastConfig.getTransport(Peer.pidPeer))).send(node, recipient, inv, Peer.pidPeer);
 				++invsSent;
@@ -333,6 +338,7 @@ public class Peer implements CDProtocol, EDProtocol
 	}
 
 	private void removeFromReconSet(Node node, int txId, Node target) {
+		if (!reconSets.containsKey(target)) return;
 		if (reconSets.get(target).contains(txId)) {
 			reconSets.get(target).remove(txId);
 		}
@@ -360,7 +366,7 @@ public class Peer implements CDProtocol, EDProtocol
 
 	// The following methods used for setting up the topology.
 
-	public void addInboundPeer(Node inboundPeer) {
+	public void addInboundPeer(Node inboundPeer, boolean both_reconcile) {
 		boolean alreadyConnected = false;
 		for (Node existingPeer : inboundPeers) {
 			if (existingPeer.getID() == inboundPeer.getID()) {
@@ -370,7 +376,7 @@ public class Peer implements CDProtocol, EDProtocol
 		}
 		if (!alreadyConnected) {
 			inboundPeers.add(inboundPeer);
-			if (reconcile) {
+			if (reconcile && both_reconcile) {
 				reconSets.put(inboundPeer, new HashSet<>());
 				nextReconResponse.put(inboundPeer, Long.valueOf(0));
 			}
@@ -378,7 +384,7 @@ public class Peer implements CDProtocol, EDProtocol
 		}
 	}
 
-	public void addOutboundPeer(Node outboundPeer) {
+	public void addOutboundPeer(Node outboundPeer, boolean both_reconcile) {
 		boolean alreadyConnected = false;
 		for (Node existingPeer : outboundPeers) {
 			if (existingPeer.getID() == outboundPeer.getID()) {
@@ -388,7 +394,7 @@ public class Peer implements CDProtocol, EDProtocol
 		}
 		if (!alreadyConnected) {
 			outboundPeers.add(outboundPeer);
-			if (reconcile) {
+			if (reconcile && both_reconcile) {
 				reconciliationQueue.offer(outboundPeer);
 				reconSets.put(outboundPeer, new HashSet<>());
 				nextReconResponse.put(outboundPeer, Long.valueOf(0));

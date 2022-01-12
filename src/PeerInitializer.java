@@ -2,6 +2,7 @@ package txrelaysim.src;
 
 import txrelaysim.src.helpers.*;
 
+import java.lang.Math;
 import java.util.HashSet;
 import java.util.HashMap;
 
@@ -19,7 +20,7 @@ public class PeerInitializer implements Control
 	private int inFloodDelay;
 	private int outFloodDelay;
 
-	private boolean allReconcile;
+	private double reconcilationPercent;
 	// Reconciliation params
 	private double outFloodPeersPercent;
 	private double inFloodPeersPercent;
@@ -34,8 +35,8 @@ public class PeerInitializer implements Control
 		outFloodDelay = Configuration.getInt(prefix + "." + "out_flood_delay");
 
 		privateBlackHolesPercent = Configuration.getInt(prefix + "." + "private_black_holes_percent", 0);
-		allReconcile = Configuration.getBoolean(prefix + "." + "all_reconcile");
-		if (allReconcile) {
+		reconcilationPercent = Configuration.getInt(prefix + "." + "reconciliation_percent");
+		if (reconcilationPercent > 0) {
 			reconciliationInterval = Configuration.getInt(prefix + "." + "reconciliation_interval");
 			outFloodPeersPercent = Configuration.getDouble(prefix + "." + "out_flood_peers_percent");
 			inFloodPeersPercent = Configuration.getDouble(prefix + "." + "in_flood_peers_percent");
@@ -48,6 +49,7 @@ public class PeerInitializer implements Control
 		Peer.pidPeer = pid;
 
 		int privateBlackHolesCount = (Network.size() - reachableCount) * privateBlackHolesPercent / 100;
+		int reconciliationNodesCount = 0;
 		// Set a subset of nodes to be reachable by other nodes.
 		while (reachableCount > 0) {
 			int r = CommonState.r.nextInt(Network.size() - 1) + 1;
@@ -74,15 +76,20 @@ public class PeerInitializer implements Control
 			// Initial parameters setting for all nodes.
 			((Peer)Network.get(i).getProtocol(pid)).inFloodDelay = inFloodDelay;
 			((Peer)Network.get(i).getProtocol(pid)).outFloodDelay = outFloodDelay;
-			if (allReconcile) {
+
+			if ((int)(Math.random() * 100) < reconcilationPercent) {
 				((Peer)Network.get(i).getProtocol(pid)).reconcile = true;
 				((Peer)Network.get(i).getProtocol(pid)).reconciliationInterval = reconciliationInterval;
 				((Peer)Network.get(i).getProtocol(pid)).inFloodLimitPercent = inFloodPeersPercent;
 				((Peer)Network.get(i).getProtocol(pid)).outFloodLimitPercent = outFloodPeersPercent;
 				((Peer)Network.get(i).getProtocol(pid)).defaultQ = defaultQ;
+				reconciliationNodesCount++;
 			}
 		}
+		System.err.println("Reconciliation Count: " + reconciliationNodesCount);
 
+		int reconciliationConnectionCount = 0;
+		int totalConnectionCount = 0;
 		// Connect all nodes to a limited number of reachable nodes.
 		for(int i = 1; i < Network.size(); i++) {
 			Node curNode = Network.get(i);
@@ -105,14 +112,19 @@ public class PeerInitializer implements Control
 				peers.get(i).add(randomNodeIndex);
 				peers.get(randomNodeIndex).add(i);
 
+				boolean both_reconcile = ((Peer)curNode.getProtocol(pid)).reconcile && ((Peer)randomNode.getProtocol(pid)).reconcile;
 				// Actual connecting.
-				((Peer)curNode.getProtocol(pid)).addOutboundPeer(randomNode);
-				((Peer)randomNode.getProtocol(pid)).addInboundPeer(curNode);
+				((Peer)curNode.getProtocol(pid)).addOutboundPeer(randomNode, both_reconcile);
+				((Peer)randomNode.getProtocol(pid)).addInboundPeer(curNode, both_reconcile);
 				++conns;
+				if (both_reconcile) reconciliationConnectionCount++;
+				totalConnectionCount++;
 			}
 		}
 
 		System.err.println("Initialized peers");
+		System.err.println("Number of total connections: " + totalConnectionCount);
+		System.err.println("Number of reconciliation connections: " + reconciliationConnectionCount);
 		return true;
 	}
 }
