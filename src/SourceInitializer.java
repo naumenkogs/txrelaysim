@@ -6,37 +6,23 @@ import peersim.core.*;
 public class SourceInitializer implements Control
 {
 	public static final int sourceIndex = 0;
-
-	private static final String PAR_PROT = "protocol";
-	private final int pid;
 	private int tps;
 
-	public SourceInitializer(String prefix) {
-		pid = Configuration.getPid(prefix + "." + PAR_PROT);
-		tps = Configuration.getInt(prefix + ".tps");
-	}
+	public SourceInitializer(String prefix) {}
 
 	@Override
 	public boolean execute() {
-		// Set the Source pid.
-		Source.pidSource = pid;
-
 		// Set node 0 as source.
-		((Source) Network.get(sourceIndex).getProtocol(pid)).isSource = true;
-		((Source) Network.get(sourceIndex).getProtocol(pid)).tps = tps;
+		((Source) Network.get(sourceIndex).getProtocol(Source.pid)).isSource = true;
 
 		//set other nodes as not source.
-		for(int i = 1; i < Network.size()-1; i++)
-			((Source) Network.get(i).getProtocol(pid)).isSource = false;
+		for(int i = 1; i < Network.size() - 1; i++)
+			((Source) Network.get(i).getProtocol(Source.pid)).isSource = false;
 
 		// Source connects to some nodes.
 		Node source = Network.get(0);
-		int sourceConns = 0;
-		while (sourceConns < 20) {
-			int randomNodeIndex = CommonState.r.nextInt(Network.size() - 1) + 1;
-			Node node = Network.get(randomNodeIndex);
-			((Source)source.getProtocol(pid)).addPeer(node);
-			++sourceConns;
+		for (int sourceConns = 0; sourceConns < 20; ++sourceConns) {
+			((Source)source.getProtocol(Source.pid)).addPeer();
 		}
 
 		return true;

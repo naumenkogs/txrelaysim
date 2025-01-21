@@ -17,11 +17,9 @@ import peersim.transport.Transport;
 
 public class Source implements CDProtocol, EDProtocol
 {
-	public static int pidSource;
+	public static int pid = 1;
 	public static int tps;
-
 	public boolean isSource = false;
-	public int txId = 0;
 	private ArrayList<Node> peerList;
 
 	public Source(String prefix) {
@@ -30,25 +28,20 @@ public class Source implements CDProtocol, EDProtocol
 
 	@Override
 	public void nextCycle(Node node, int pid) {
-		Node recipient;
-		int nextNodeIndex;
-
 		if (isSource == false)
 			return;
 
+		// if the experiment is over soon, stop issuing transactions and let existing propagate.
 		if (CommonState.getEndTime() < CommonState.getTime() + 40 * 1000) {
-			// if the experiment is over soon, stop issuing transactions and let existing propagate.
 			return;
 		}
 
-		int randomNumberOfTxs = CommonState.r.nextInt(this.tps * 2); // anything from 0 to tps * 2.
-
-		for (int i = 0; i < randomNumberOfTxs; ++i) {
-			txId++;
+		int randomNumberOfTxs = CommonState.r.nextInt(7 * 2); // anything from 0 to 14.
+		for (int txid = 0; txid < randomNumberOfTxs; ++txid) {
 			int randomRecipientIndex = CommonState.r.nextInt(peerList.size() - 1) + 1;
-			recipient = peerList.get(randomRecipientIndex);
-			IntMessage inv = new IntMessage(SimpleEvent.INV, node, txId);
-			((Transport)recipient.getProtocol(FastConfig.getTransport(pid))).send(node, recipient, inv, Peer.pidPeer);
+			Node recipient = peerList.get(randomRecipientIndex);
+			IntMessage inv = new IntMessage(SimpleEvent.INV, node, txid);
+			((Transport)recipient.getProtocol(FastConfig.getTransport(Peer.pid))).send(node, recipient, inv, Peer.pid);
 		}
 	}
 
@@ -61,8 +54,10 @@ public class Source implements CDProtocol, EDProtocol
 		return new Source("");
 	}
 
-	public void addPeer(Node peer) {
-		peerList.add(peer);
+	public void addPeer() {
+		int randomNodeIndex = CommonState.r.nextInt(Network.size() - 1) + 1;
+		Node node = Network.get(randomNodeIndex);
+		peerList.add(node);
 	}
 
 }

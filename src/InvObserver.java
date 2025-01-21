@@ -96,20 +96,15 @@ public class InvObserver implements Control
 				txArrivalTimes.get(txId).add(arrivalTime);
 			}
 
-			// See how many black holes there were.
-			if (peer.isBlackHole) {
-				++blackHoles;
-				continue;
-			}
 
-			if (peer.isReachable) {
-				invsByNodeType.put(NodeType.REACHABLE, invsByNodeType.getOrDefault(NodeType.REACHABLE, 0) + peer.invsSent);
-				txsByNodeType.put(NodeType.REACHABLE, txsByNodeType.getOrDefault(NodeType.REACHABLE, 0) + peer.txSent);
-				reachableNodes++;
-			} else {
-				invsByNodeType.put(NodeType.PRIVATE, invsByNodeType.getOrDefault(NodeType.PRIVATE, 0) + peer.invsSent);
-				txsByNodeType.put(NodeType.PRIVATE, txsByNodeType.getOrDefault(NodeType.PRIVATE, 0) + peer.txSent);
-			}
+			// if (peer.isReachable) {
+			// 	invsByNodeType.put(NodeType.REACHABLE, invsByNodeType.getOrDefault(NodeType.REACHABLE, 0) + peer.invsSent);
+			// 	txsByNodeType.put(NodeType.REACHABLE, txsByNodeType.getOrDefault(NodeType.REACHABLE, 0) + peer.txSent);
+			// 	reachableNodes++;
+			// } else {
+			// 	invsByNodeType.put(NodeType.PRIVATE, invsByNodeType.getOrDefault(NodeType.PRIVATE, 0) + peer.invsSent);
+			// 	txsByNodeType.put(NodeType.PRIVATE, txsByNodeType.getOrDefault(NodeType.PRIVATE, 0) + peer.txSent);
+			// }
 
 			// See how many inv/shortinv/tx messages every node sent.
 			if (peer.reconcile) {
@@ -119,11 +114,11 @@ public class InvObserver implements Control
 				successRecons.add(peer.successRecons);
 				failedRecons.add(peer.failedRecons);
 
-				if (peer.isReachable) {
-					shortInvsByNodeType.put(NodeType.REACHABLE, shortInvsByNodeType.getOrDefault(NodeType.REACHABLE, 0) + peer.shortInvsSent);
-				} else {
-					shortInvsByNodeType.put(NodeType.PRIVATE, shortInvsByNodeType.getOrDefault(NodeType.PRIVATE, 0) + peer.shortInvsSent);
-				}
+				// if (peer.isReachable) {
+				// 	shortInvsByNodeType.put(NodeType.REACHABLE, shortInvsByNodeType.getOrDefault(NodeType.REACHABLE, 0) + peer.shortInvsSent);
+				// } else {
+				// 	shortInvsByNodeType.put(NodeType.PRIVATE, shortInvsByNodeType.getOrDefault(NodeType.PRIVATE, 0) + peer.shortInvsSent);
+				// }
 			} else {
 				invsByProtocol.put(Protocol.LEGACY, invsByProtocol.getOrDefault(Protocol.LEGACY, 0) + peer.invsSent);
 				txsByProtocol.put(Protocol.LEGACY, txsByProtocol.getOrDefault(Protocol.LEGACY, 0) + peer.txSent);
@@ -177,6 +172,11 @@ public class InvObserver implements Control
 			// sketches/requests on the floor?).
 			return false;
 		}
+
+		if (!invsByNodeType.containsKey(NodeType.REACHABLE)) {
+			return false;
+		}
+
 		System.out.println("Total bandwidth per tx");
 		int shortInvsTotal = shortInvsByNodeType.getOrDefault(NodeType.REACHABLE, 0) + shortInvsByNodeType.getOrDefault(NodeType.PRIVATE, 0);
 		int invsTotal = invsByNodeType.get(NodeType.REACHABLE) + invsByNodeType.get(NodeType.PRIVATE);
