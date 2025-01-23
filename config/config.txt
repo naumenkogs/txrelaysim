@@ -9,9 +9,9 @@ MAXDELAY 100
 DROP 0
 
 random.seed 9098797865656766578567
-network.size 150
+network.size 1500
 simulation.endtime CYCLE*CYCLES
-simulation.logtime CYCLE * 50
+simulation.logtime CYCLE * 500
 simulation.experiments 1
 
 ################### protocols ===========================
@@ -20,7 +20,7 @@ protocol.0.step CYCLE
 
 protocol.1 txrelaysim.src.Source
 protocol.1.linkable 0
-protocol.1.step 1000 # trigger every seconds to handle tps easier
+protocol.1.step 100 # trigger every seconds to handle tps easier
 protocol.1.transport tr
 
 protocol.2 txrelaysim.src.Peer
@@ -49,15 +49,15 @@ init.2.out_peers_legacy 8
 # How many outbound connections erlay (reconciling) nodes make
 init.2.out_peers_recon 8
 # How many reachable nodes we have in the network (total nodes is above called `network.size`)
-init.2.reachable_count 30
+init.2.reachable_count 300
 # Poisson delays applied by legacy nodes when relaying transactions (to inbounds and outbounds)
 init.2.in_relay_delay_legacy_peer 5000
-init.2.out_relay_delay_legacy_peer 2000
+init.2.out_relay_delay_legacy_peer 20000
 # Poisson delays applied by erlay nodes when relaying transactions (to inbounds and outbounds)
-init.2.in_relay_delay_recon_peer 1600
+init.2.in_relay_delay_recon_peer 5000
 init.2.out_relay_delay_recon_peer 800
 # Fraction of all nodes that support reconciliation
-init.2.reconcile_percent 50
+init.2.reconcile_percent 0
 # Intervals between reconciliations with a given peer (Alice reconciles with Bob every 8 seconds)
 init.2.reconciliation_interval 8000
 # For erlay nodes, to how many in/out peers they have they will flood.

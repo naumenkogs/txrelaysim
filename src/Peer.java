@@ -88,8 +88,6 @@ public class Peer implements CDProtocol, EDProtocol
 		}
 	};
 
-
-
 	public Object clone() {
 		return new Peer("");
 	}
@@ -150,29 +148,23 @@ public class Peer implements CDProtocol, EDProtocol
 			// INV received from a peer.
 			handleInvMessage(node, pid, (IntMessage)castedEvent);
 			break;
-		case SimpleEvent.RECON_REQUEST:
-			// Reconciliation request from a peer.
-			handleReconRequest(node, pid, (SimpleMessage)castedEvent);
-			break;
-		case SimpleEvent.SKETCH:
-			// Sketch from a peer in response to reconciliation request.
-			ArrayListMessage<?> ar = (ArrayListMessage<?>) castedEvent;
-			ArrayList<Integer> remoteSet = new ArrayList<Integer>();
-			for (Object x : ar.getArrayList()) {
-				remoteSet.add((Integer) x);
-			}
-			handleSketchMessage(node, pid, ar.getSender(), remoteSet);
-			break;
-		case SimpleEvent.RECON_FINALIZATION:
-			// We use this to track how many inv/shortinvs messages were sent for statas.
-			handleReconFinalization(node, pid, (TupleMessage)castedEvent);
-			break;
-		// TODO: consider removing this for optimization.
-		case SimpleEvent.GETDATA:
-			// We use this just for bandwidth accounting, the actual txId (what we need) was already
-			// commnunicated so nothing to do here.
-			++txSent;
-			break;
+		// case SimpleEvent.RECON_REQUEST:
+		// 	// Reconciliation request from a peer.
+		// 	handleReconRequest(node, pid, (SimpleMessage)castedEvent);
+		// 	break;
+		// case SimpleEvent.SKETCH:
+		// 	// Sketch from a peer in response to reconciliation request.
+		// 	ArrayListMessage<?> ar = (ArrayListMessage<?>) castedEvent;
+		// 	ArrayList<Integer> remoteSet = new ArrayList<Integer>();
+		// 	for (Object x : ar.getArrayList()) {
+		// 		remoteSet.add((Integer) x);
+		// 	}
+		// 	handleSketchMessage(node, pid, ar.getSender(), remoteSet);
+		// 	break;
+		// case SimpleEvent.RECON_FINALIZATION:
+		// 	// We use this to track how many inv/shortinvs messages were sent for statas.
+		// 	handleReconFinalization(node, pid, (TupleMessage)castedEvent);
+		// 	break;
 		}
 	}
 
@@ -191,10 +183,7 @@ public class Peer implements CDProtocol, EDProtocol
 		}
 
 		if (!txArrivalTimes.keySet().contains(txId)) {
-			SimpleMessage getdata = new SimpleMessage(SimpleEvent.GETDATA, node);
-			((Transport)sender.getProtocol(FastConfig.getTransport(pid))).send(node, sender, getdata, Peer.pid);
 			txArrivalTimes.put(txId, CommonState.getTime());
-
 			prepareAnnouncement(node, pid, txId, sender);
 		}
 	}
@@ -222,8 +211,6 @@ public class Peer implements CDProtocol, EDProtocol
 			} else {
 				++usMiss;
 				if (!txArrivalTimes.keySet().contains(txId)) {
-					SimpleMessage getdata = new SimpleMessage(SimpleEvent.GETDATA, node);
-					((Transport)sender.getProtocol(FastConfig.getTransport(Peer.pid))).send(node, sender, getdata, Peer.pid);
 					txArrivalTimes.put(txId, CommonState.getTime());
 					prepareAnnouncement(node, pid, txId, sender);
 				} else {
@@ -304,10 +291,6 @@ public class Peer implements CDProtocol, EDProtocol
 
 		Random random = new Random();
 		for (Node peer : inboundPeers) {
-			if (!reconSets.containsKey(peer)) { // non-reconciling (legacy) inbound peers
-				assert(false);
-			}
-
 			if (nextFloodInbound < curTime) {
 				nextFloodInbound = curTime + generateRandomDelay(this.inRelayDelay);
 				delay = 0;
@@ -316,17 +299,14 @@ public class Peer implements CDProtocol, EDProtocol
 			}
 			// 10% chance
 			boolean fanout = random.nextInt(100) < 10;
+			fanout = true; // TODO
 			scheduleAnnouncement(node, delay, peer, txId, fanout);
 		}
 
 		ArrayList<Node> outboundPeersCopy = new ArrayList<Node>(outboundPeers);
 		Collections.shuffle(outboundPeersCopy) ;
-		int fanouts = 1;
+		int fanouts = 100; // TODO
 		for (Node peer : outboundPeersCopy) {
-			if (!reconSets.containsKey(peer)) { // check for non-reconciling
-				assert(false);
-			}
-
 			long nextFloodOutboundTime = nextFloodOutbound.get(peer);
 			if (nextFloodOutboundTime < curTime) {
 				delay = 0;
