@@ -4,16 +4,16 @@ import java.util.ArrayList;
 
 import peersim.core.Node;
 
-public class ArrayListMessage<T> extends SimpleMessage {
+public class ArrayListMessage extends SimpleMessage {
 
-	private ArrayList<T> arrayList;
+	private ArrayList<Integer> arrayList;
 
-	public ArrayListMessage(int type, Node sender, ArrayList<T> arrayList) {
+	public ArrayListMessage(int type, Node sender, ArrayList<Integer> arrayList) {
 		super(type, sender);
 		this.arrayList = arrayList;
 	}
 
-	public ArrayList<T> getArrayList() {
+	public ArrayList<Integer> getArrayList() {
 		return this.arrayList;
 	}
 

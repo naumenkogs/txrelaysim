@@ -34,51 +34,15 @@ import java.util.*;
 
 public class InvObserver implements Control
 {
-	/**
-	 * The protocol to operate on.
-	 * @config
-	 */
-	private static final String PAR_PROT = "protocol";
-
-	/** The name of this observer in the configuration */
-	private final String name;
-
 	/** Protocol identifier */
-	private final int pid;
+	private final int pid = 2;
 
-	/**
-	 * Standard constructor that reads the configuration parameters.
-	 * Invoked by the simulation engine.
-	 * @param name the configuration prefix for this class
-	 */
-	public InvObserver(String name) {
-		this.name = name;
-		pid = Configuration.getPid(name + "." + PAR_PROT);
-	}
-
-	public enum Protocol {
-		ERLAY,
-		LEGACY,
-	}
-	public enum NodeType {
-		REACHABLE,
-		PRIVATE,
+	public InvObserver(String prefix) {
 	}
 
 	public boolean execute() {
-		// Track how many invs and txs were sent.
-		HashMap<Protocol, Integer> invsByProtocol = new HashMap<>();
-		HashMap<Protocol, Integer> txsByProtocol = new HashMap<>();
-		HashMap<NodeType, Integer> invsByNodeType = new HashMap<>();
-		HashMap<NodeType, Integer> txsByNodeType = new HashMap<>();
-		HashMap<NodeType, Integer> shortInvsByNodeType = new HashMap<>();
-
-		// Track reconciliation results across experiments.
-		ArrayList<Integer> successRecons = new ArrayList<>();
-		ArrayList<Integer> failedRecons = new ArrayList<>();
-		// Track how soon transactions were propagating across the network.
 		HashMap<Integer, ArrayList<Long>> txArrivalTimes = new HashMap<Integer, ArrayList<Long>>();
-		int blackHoles = 0, reconcilingNodes = 0, reachableNodes = 0;
+		Stats stats = new Stats();
 
 		for(int i = 1; i < Network.size(); i++) {
 			Peer peer = (Peer) Network.get(i).getProtocol(pid);
@@ -95,6 +59,12 @@ public class InvObserver implements Control
 				}
 				txArrivalTimes.get(txId).add(arrivalTime);
 			}
+
+			stats.successRecons += peer.stats.successRecons;
+			stats.failedRecons += peer.stats.failedRecons;
+			stats.invs += peer.stats.invs;
+			stats.shortInvs += peer.stats.shortInvs;
+			stats.sketchItems += peer.stats.sketchItems;
 		}
 
 		int allTxs = txArrivalTimes.size();
@@ -108,11 +78,7 @@ public class InvObserver implements Control
 			ArrayList<?> ar = (ArrayList<?>) pair.getValue();
 			ArrayList<Long> arrivalTimes = new ArrayList<>();
 
-			if (ar.size() < (Network.size() - 1) * 0.99)  {
-				// Don't bother printing results if relay is in progress (some nodes didn't receive
-				// the transactions yet).
-				continue;
-			}
+			if (ar.size() < (Network.size() - 1) * 0.99) continue;
 
 			for (Object x : ar) {
 				arrivalTimes.add((Long) x);
@@ -124,9 +90,13 @@ public class InvObserver implements Control
 			avgTxArrivalDelay.add(percentile95delay);
 		}
 
+		int totalBw = stats.invs * 32 + (stats.shortInvs + stats.sketchItems) * 8;
+
 		System.err.println("");
 		System.err.println("-----------RESULTS--------");
 		System.err.println("Relayed txs: " + allTxs);
+		System.err.println(String.format("Reconciliations. Success: %d, fail: %d.", stats.successRecons, stats.failedRecons));
+		System.err.println(String.format("Total bandwidth (in megabytes): %d", totalBw / 1024 / 1024));
 
 		double avgMaxDelay = avgTxArrivalDelay.stream().mapToLong(val -> val).average().orElse(0.0);
 		System.out.println("Avg max latency: " + avgMaxDelay);

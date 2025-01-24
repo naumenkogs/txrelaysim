@@ -19,8 +19,8 @@ public class Source implements CDProtocol, EDProtocol
 {
 	public static int pid = 1;
 	public static int tps;
-	public boolean isSource = false;
 	private ArrayList<Node> peerList;
+	private static int txId = 0;
 
 	public Source(String prefix) {
 		this.peerList = new ArrayList<>();
@@ -28,20 +28,16 @@ public class Source implements CDProtocol, EDProtocol
 
 	@Override
 	public void nextCycle(Node node, int pid) {
-		if (isSource == false)
-			return;
-
-		// if the experiment is over soon, stop issuing transactions and let existing propagate.
-		if (CommonState.getEndTime() < CommonState.getTime() + 40 * 1000) {
-			return;
-		}
+		// TODO: why we call this for more than the first node?
+		if (peerList.size() == 0 ) return;
 
 		int randomNumberOfTxs = CommonState.r.nextInt(7 * 2); // anything from 0 to 14.
-		for (int txid = 0; txid < randomNumberOfTxs; ++txid) {
+		while (randomNumberOfTxs > 0) {
 			int randomRecipientIndex = CommonState.r.nextInt(peerList.size() - 1) + 1;
 			Node recipient = peerList.get(randomRecipientIndex);
-			IntMessage inv = new IntMessage(SimpleEvent.INV, node, txid);
+			IntMessage inv = new IntMessage(SimpleEvent.INV, node, ++txId);
 			((Transport)recipient.getProtocol(FastConfig.getTransport(Peer.pid))).send(node, recipient, inv, Peer.pid);
+			--randomNumberOfTxs;
 		}
 	}
 
