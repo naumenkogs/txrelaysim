@@ -319,7 +319,7 @@ public class Peer implements CDProtocol, EDProtocol
 
 	// A helper for scheduling events which happen after a random delay.
 	private long generateRandomDelay(long avgDelay) {
-		return CommonState.r.nextLong(avgDelay * 2 + 1);
+		return CommonState.r.nextPoisson(avgDelay / 1000) * 1000;
 	}
 
 	// Used for setting up the topology.
