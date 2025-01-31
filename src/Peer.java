@@ -43,9 +43,18 @@ class FanoutDestinations {
 	}
 
 	public FanoutDestinations(double in, int out) {
-		// defaults for legacy
 		this.in = in;
 		this.out = out;
+	}
+}
+
+class DelayedTxData {
+	public Node owner;
+	public Long requestTime;
+
+	public DelayedTxData(Node owner, Long requestTime) {
+		this.owner = owner;
+		this.requestTime = requestTime;
 	}
 }
 
@@ -64,6 +73,11 @@ public class Peer implements CDProtocol, EDProtocol
 	public HashSet<Node> outboundPeers;
 	public HashSet<Node> inboundPeers;
 	public HashMap<Integer, Long> txArrivalTimes;
+	// For inbounds, we delay requesting a transaction (GETDATA), so that we're not stuck asking a malicious inbound for it.
+	// In this simulation, this works through arrival time accounting.
+	// Maps txid to <node, time>.
+	public HashMap<Integer, DelayedTxData> txDelayedRequest;
+
 	public HashMap<Node, HashSet<Integer>> peerKnowsTxs;
 
 	public FanoutDestinations fanoutDestinations;
@@ -93,6 +107,7 @@ public class Peer implements CDProtocol, EDProtocol
 		nextFloodOutbound = new HashMap<>();
 		stats = new Stats();
 		fanoutDestinations = new FanoutDestinations();
+		txDelayedRequest = new HashMap<>();
 	}
 
 	class AnnouncementData
@@ -159,6 +174,15 @@ public class Peer implements CDProtocol, EDProtocol
 				}
 			}
 		}
+
+		Iterator<Map.Entry<Integer, DelayedTxData>> delayexTxIt = txDelayedRequest.entrySet().iterator();
+		while (delayexTxIt.hasNext()) {
+			Map.Entry<Integer, DelayedTxData> delayedTx = (Map.Entry<Integer, DelayedTxData>)delayexTxIt.next();
+			if (delayedTx.getValue().requestTime < curTime) {
+				receiveTx(node, delayedTx.getKey(), delayedTx.getValue().owner);
+				delayexTxIt.remove();
+			}
+		}
 	}
 
 	@Override
@@ -193,10 +217,31 @@ public class Peer implements CDProtocol, EDProtocol
 			}
 		}
 
-		if (!txArrivalTimes.keySet().contains(txId)) {
-			txArrivalTimes.put(txId, CommonState.getTime());
-			prepareAnnouncement(node, txId, sender);
+		receiveAnnoucement(node, txId, sender);
+	}
+
+	private void receiveAnnoucement(Node node, int txId, Node sender) {
+		if (txArrivalTimes.keySet().contains(txId)) {
+			return;
 		}
+
+		// If came from outbound, store right away.
+		// If came from inbound, delay requesting the tx, so that we have a chance to fetch it from outbounds (safer).
+		if (inboundPeers.contains(sender)) {
+			if (txDelayedRequest.keySet().contains(txId)) {
+				return;
+			}
+			txDelayedRequest.put(txId, new DelayedTxData(sender, CommonState.getTime() + 2000));
+		} else {
+			receiveTx(node, txId, sender);
+			txDelayedRequest.remove(txId);
+		}
+	}
+
+
+	private void receiveTx(Node node, int txId, Node sender) {
+		txArrivalTimes.put(txId, CommonState.getTime());
+		prepareAnnouncement(node, txId, sender);
 	}
 
 	private void handleReconRequest(Node node, SimpleMessage message) {
@@ -222,12 +267,7 @@ public class Peer implements CDProtocol, EDProtocol
 				++shared;
 			} else {
 				++usMiss;
-				if (!txArrivalTimes.keySet().contains(txId)) {
-					txArrivalTimes.put(txId, CommonState.getTime());
-					prepareAnnouncement(node, txId, sender);
-				} else {
-					// This could happen due to the delay on adding to the local set. Or some in-flight "collision".
-				}
+				receiveAnnoucement(node, txId, sender);
 			}
 		}
 
