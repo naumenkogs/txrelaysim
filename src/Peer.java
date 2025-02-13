@@ -30,6 +30,9 @@ class Stats {
 
 	public int successRecons;
 	public int failedRecons;
+
+	public int duplicateAnno;
+	public int freshAnno;
 }
 
 class FanoutDestinations {
@@ -158,8 +161,6 @@ public class Peer implements CDProtocol, EDProtocol
 				// We could have received it between scheduling and executing.
 				if (peerKnowsTxs.get(recepient).contains(txId)) continue;
 
-				peerKnowsTxs.get(recepient).add(txId);
-
 				// TODO: should this be decided on scheduling or right-before-announcing?
 				boolean fanout = entry.shouldFanout;
 				// Peer reconciles
@@ -209,32 +210,33 @@ public class Peer implements CDProtocol, EDProtocol
 		int txId = message.getInteger();
 		Node sender = message.getSender();
 
-		if (sender.getID() != 0) {
-			// Came not from source.
-			peerKnowsTxs.get(sender).add(txId);
-			if (reconcile) {
-				removeFromReconSet(node, txId, sender);
-			}
+		if (sender.getID() != 0 && reconcile) {
+			removeFromReconSet(node, txId, sender);
 		}
 
 		receiveAnnoucement(node, txId, sender);
 	}
 
 	private void receiveAnnoucement(Node node, int txId, Node sender) {
-		if (txArrivalTimes.keySet().contains(txId)) {
-			return;
-		}
-
-		// If came from outbound, store right away.
-		// If came from inbound, delay requesting the tx, so that we have a chance to fetch it from outbounds (safer).
-		if (inboundPeers.contains(sender)) {
-			if (txDelayedRequest.keySet().contains(txId)) {
-				return;
+		// Consider for requesting only if we hasn't got the tx body yet.
+		if (!txArrivalTimes.keySet().contains(txId)) {
+			// If came from outbound, store right away.
+			// If came from inbound, delay requesting the tx, so that we have a chance to fetch it from outbounds (safer).
+			if (inboundPeers.contains(sender)) {
+				if (!txDelayedRequest.keySet().contains(txId)) {
+					txDelayedRequest.put(txId, new DelayedTxData(sender, CommonState.getTime() + 2000));
+				}
+			} else {
+				receiveTx(node, txId, sender);
+				txDelayedRequest.remove(txId);
 			}
-			txDelayedRequest.put(txId, new DelayedTxData(sender, CommonState.getTime() + 2000));
-		} else {
-			receiveTx(node, txId, sender);
-			txDelayedRequest.remove(txId);
+			++stats.freshAnno;
+		} else ++stats.duplicateAnno;
+
+		++stats.invs;
+
+		if (sender.getID() != 0) {
+			peerKnowsTxs.get(sender).add(txId);
 		}
 	}
 
@@ -249,9 +251,7 @@ public class Peer implements CDProtocol, EDProtocol
 		HashSet<Integer> reconSet = reconSets.get(sender);
 		ArrayListMessage sketch = new ArrayListMessage(SimpleEvent.SKETCH, node, new ArrayList<Integer>(reconSet));
 		((Transport)sender.getProtocol(FastConfig.getTransport(Peer.pid))).send(node, sender, sketch, Peer.pid);
-		peerKnowsTxs.get(sender).addAll(reconSet);
 		reconSet.clear();
-		assert(reconSets.get(sender).size() == 0);
 	}
 
 	// Handle a sketch a peer sent us in response to our request. All sketch extension logic and
@@ -259,12 +259,18 @@ public class Peer implements CDProtocol, EDProtocol
 	// easily modeled and accounted at this node locally.
 	private void handleSketchMessage(Node node, Node sender, ArrayList<Integer> remoteSet) {
 		Set<Integer> localSet = reconSets.get(sender);
+		// Although diff estimation should happen at the sketch sender side, we do it here because
+		// it works in our simplified model, to save extra messages.
+		int localSetSize = localSet.size();
+		int remoteSetSize = remoteSet.size();
+		int capacity = Math.abs(localSetSize - remoteSetSize) + (int)(q * Math.min(localSetSize, remoteSetSize)) + c;
+
 		int shared = 0, usMiss = 0, theyMiss = 0;
 		// Handle transactions the local (sketch receiving) node doesn't have.
 		for (Integer txId : remoteSet) {
 			if (localSet.contains(txId)) {
-				assert(peerKnowsTxs.get(sender).contains(txId));
 				++shared;
+				peerKnowsTxs.get(sender).add(txId);
 			} else {
 				++usMiss;
 				receiveAnnoucement(node, txId, sender);
@@ -276,6 +282,8 @@ public class Peer implements CDProtocol, EDProtocol
 		for (Integer txId : localSet) {
 			if (!remoteSet.contains(txId)) {
 				theyMiss++;
+				assert(!peerKnowsTxs.get(sender).contains(txId));
+				// Possibly we heard it from them, but didn't add to the set yet (delay).
 				announceTx(node, txId, sender);
 			}
 		}
@@ -283,18 +291,11 @@ public class Peer implements CDProtocol, EDProtocol
 		// Compute the cost of this sketch exchange.
 		int diff = usMiss + theyMiss;
 
-		// Although diff estimation should happen at the sketch sender side, we do it here because
-		// it works in our simplified model, to save extra messages.
-		int localSetSize = localSet.size();
-		int remoteSetSize = remoteSet.size();
-		int capacity = Math.abs(localSetSize - remoteSetSize) + (int)(q * Math.min(localSetSize, remoteSetSize)) + c;
-
 		stats.sketchItems += capacity;
 		// All INVs we'd announce to them (theyMiss) are accounted above (announceTx).
 		if (capacity >= diff) {
 			stats.successRecons++;
 			stats.shortInvs += usMiss;
-			stats.invs += usMiss;
 		} else {
 			stats.failedRecons++;
 			stats.invs += usMiss;
@@ -312,12 +313,9 @@ public class Peer implements CDProtocol, EDProtocol
 		for (Node peer : inboundPeers) {
 			if (nextFloodInbound < curTime) {
 				nextFloodInbound = curTime + generateRandomDelay(this.delays.in);
-				delay = 0;
-			} else {
-				delay = nextFloodInbound - curTime;
 			}
 			boolean fanout = random.nextInt(100) < (100 * fanoutDestinations.in);
-			scheduleAnnouncement(node, delay + curTime, peer, txId, fanout);
+			scheduleAnnouncement(node, nextFloodInbound, peer, txId, fanout);
 		}
 
 		ArrayList<Node> outboundPeersCopy = new ArrayList<Node>(outboundPeers);
@@ -326,12 +324,10 @@ public class Peer implements CDProtocol, EDProtocol
 		for (Node peer : outboundPeersCopy) {
 			long nextFloodOutboundTime = nextFloodOutbound.get(peer);
 			if (nextFloodOutboundTime < curTime) {
-				delay = 0;
-				nextFloodOutbound.put(peer, curTime + generateRandomDelay(this.delays.out));
-			} else {
-				delay = nextFloodOutboundTime - curTime;
+				nextFloodOutboundTime = curTime + generateRandomDelay(this.delays.out);
+				nextFloodOutbound.put(peer, nextFloodOutboundTime);
 			}
-			scheduleAnnouncement(node, delay + curTime, peer, txId, fanouts-- > 0);
+			scheduleAnnouncement(node, nextFloodOutboundTime, peer, txId, fanouts-- > 0);
 		}
 	}
 
@@ -354,7 +350,7 @@ public class Peer implements CDProtocol, EDProtocol
 	private void announceTx(Node node, int txId, Node recepient) {
 		IntMessage inv = new IntMessage(SimpleEvent.INV, node, txId);
 		((Transport)recepient.getProtocol(FastConfig.getTransport(Peer.pid))).send(node, recepient, inv, Peer.pid);
-		++stats.invs;
+		peerKnowsTxs.get(recepient).add(txId);
 	}
 
 	// A helper for scheduling events which happen after a random delay.

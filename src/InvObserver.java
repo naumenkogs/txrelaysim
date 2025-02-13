@@ -65,6 +65,8 @@ public class InvObserver implements Control
 			stats.invs += peer.stats.invs;
 			stats.shortInvs += peer.stats.shortInvs;
 			stats.sketchItems += peer.stats.sketchItems;
+			stats.duplicateAnno += peer.stats.duplicateAnno;
+			stats.freshAnno += peer.stats.freshAnno;
 		}
 
 		int allTxs = txArrivalTimes.size();
@@ -97,9 +99,17 @@ public class InvObserver implements Control
 		System.err.println("Relayed txs: " + allTxs);
 		System.err.println(String.format("Reconciliations. Success: %d, fail: %d.", stats.successRecons, stats.failedRecons));
 		System.err.println(String.format("Total bandwidth (in megabytes): %d", totalBw / 1024 / 1024));
+		System.err.println(String.format("INVs (in megabytes): %d", stats.invs * 32 / 1024 / 1024));
+		System.err.println(String.format("Short INVs (in megabytes): %d", stats.shortInvs * 8 / 1024 / 1024));
+		System.err.println(String.format("Sketch items (in megabytes): %d", stats.sketchItems * 8 / 1024 / 1024));
+
+
 
 		double avgMaxDelay = avgTxArrivalDelay.stream().mapToLong(val -> val).average().orElse(0.0);
 		System.out.println("Avg max latency: " + avgMaxDelay);
+
+		System.out.println("Duplicate anno: " + stats.duplicateAnno);
+		System.out.println("Fresh anno: " + stats.freshAnno);
 		return false;
 	}
 }
