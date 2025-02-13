@@ -82,6 +82,9 @@ public class Peer implements CDProtocol, EDProtocol
 	public HashMap<Integer, DelayedTxData> txDelayedRequest;
 
 	public HashMap<Node, HashSet<Integer>> peerKnowsTxs;
+	// How many times a tx was announced to either to us or by us.
+	// Stop fanning out if reached 4.
+	public HashMap<Integer, Integer> txAnnouncedTimes;
 
 	public FanoutDestinations fanoutDestinations;
 
@@ -111,6 +114,7 @@ public class Peer implements CDProtocol, EDProtocol
 		stats = new Stats();
 		fanoutDestinations = new FanoutDestinations();
 		txDelayedRequest = new HashMap<>();
+		txAnnouncedTimes = new HashMap<>();
 	}
 
 	class AnnouncementData
@@ -163,6 +167,13 @@ public class Peer implements CDProtocol, EDProtocol
 
 				// TODO: should this be decided on scheduling or right-before-announcing?
 				boolean fanout = entry.shouldFanout;
+				int announcedTimes = txAnnouncedTimes.get(txId);
+				if (announcedTimes < 5) {
+					fanout = true;
+					txAnnouncedTimes.put(txId, announcedTimes + 1);
+				} else {
+					fanout = false;
+				}
 				// Peer reconciles
 				if (reconcile && reconSets.containsKey(recepient)) {
 					if (!fanout) {
@@ -231,7 +242,11 @@ public class Peer implements CDProtocol, EDProtocol
 				txDelayedRequest.remove(txId);
 			}
 			++stats.freshAnno;
-		} else ++stats.duplicateAnno;
+			txAnnouncedTimes.put(txId, 1);
+		} else {
+			++stats.duplicateAnno;
+			txAnnouncedTimes.put(txId, txAnnouncedTimes.get(txId) + 1);
+		}
 
 		++stats.invs;
 
