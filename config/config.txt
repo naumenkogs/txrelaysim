@@ -37,14 +37,14 @@ init.2.reachable_count REACHABLE
 init.2.in_delay_legacy 5 * 1000
 init.2.out_delay_legacy 2 * 1000
 
-init.2.in_delay_erlay 20 * 1000
-init.2.out_delay_erlay 10 * 1000
+init.2.in_delay_erlay 5 * 1000
+init.2.out_delay_erlay 2 * 1000
 
 # Fraction of all nodes that support reconciliation
 init.2.reconcile_count network.size * RECONCILING_FRACTION
 
 # Intervals between reconciliations with a given peer (Alice reconciles with Bob every 8 seconds)
-init.2.reconciliation_interval 2000
+init.2.reconciliation_interval 4000
 
 init.2.in_fanout_fraction_erlay 0.1
 init.2.out_fanout_erlay 1

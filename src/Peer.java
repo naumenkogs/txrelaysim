@@ -165,15 +165,28 @@ public class Peer implements CDProtocol, EDProtocol
 				// We could have received it between scheduling and executing.
 				if (peerKnowsTxs.get(recepient).contains(txId)) continue;
 
-				// TODO: should this be decided on scheduling or right-before-announcing?
 				boolean fanout = entry.shouldFanout;
 				int announcedTimes = txAnnouncedTimes.get(txId);
-				if (announcedTimes < 5) {
+				if (announcedTimes < fanoutDestinations.out) {
 					fanout = true;
 					txAnnouncedTimes.put(txId, announcedTimes + 1);
 				} else {
 					fanout = false;
 				}
+
+	/*
+				if (inboundPeers.contains(recepient)) {
+					fanout = random.nextInt(100) < (100 * fanoutDestinations.in);
+				} else {
+					int announcedTimes = txAnnouncedTimes.get(txId);
+					if (announcedTimes < fanoutDestinations.out + 1) {
+						fanout = true;
+						txAnnouncedTimes.put(txId, announcedTimes + 1);
+					} else {
+						fanout = false;
+					}
+				}
+*/
 				// Peer reconciles
 				if (reconcile && reconSets.containsKey(recepient)) {
 					if (!fanout) {
@@ -245,7 +258,7 @@ public class Peer implements CDProtocol, EDProtocol
 			txAnnouncedTimes.put(txId, 1);
 		} else {
 			++stats.duplicateAnno;
-			txAnnouncedTimes.put(txId, txAnnouncedTimes.get(txId) + 1);
+			// txAnnouncedTimes.put(txId, txAnnouncedTimes.get(txId) + 1);
 		}
 
 		++stats.invs;
@@ -366,6 +379,7 @@ public class Peer implements CDProtocol, EDProtocol
 		IntMessage inv = new IntMessage(SimpleEvent.INV, node, txId);
 		((Transport)recepient.getProtocol(FastConfig.getTransport(Peer.pid))).send(node, recepient, inv, Peer.pid);
 		peerKnowsTxs.get(recepient).add(txId);
+		
 	}
 
 	// A helper for scheduling events which happen after a random delay.
