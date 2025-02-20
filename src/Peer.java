@@ -99,6 +99,13 @@ public class Peer implements CDProtocol, EDProtocol
 	public long nextRecon = 0;
 	private HashMap<Node, HashSet<Integer>> reconSets;
 
+	// If a peer hits 8 poissons, it's time to initiate reconciliations and reset the count.
+	private HashMap<Node, Integer> reconTimes;
+	private HashSet<Node> awaitingSketch;
+	private boolean respondWithSketches = false;
+
+	private HashMap<Node, Integer> localSetSizeWhenInitiated;
+
 	/* Stats */
 	public Stats stats;
 
@@ -115,6 +122,9 @@ public class Peer implements CDProtocol, EDProtocol
 		fanoutDestinations = new FanoutDestinations();
 		txDelayedRequest = new HashMap<>();
 		txAnnouncedTimes = new HashMap<>();
+		reconTimes = new HashMap<>();
+		awaitingSketch = new HashSet<>();
+		localSetSizeWhenInitiated = new HashMap<>();
 	}
 
 	class AnnouncementData
@@ -138,24 +148,35 @@ public class Peer implements CDProtocol, EDProtocol
 	@Override
 	public void nextCycle(Node node, int pid) {
 		long curTime = CommonState.getTime();
-		if (reconcile && reconciliationQueue.peek() != null) {
-			// If reconciliation is enabled on this node, it should periodically request reconciliations
-			// with a queue of its reconciling peers.
-			if (curTime > nextRecon) {
-				Node recepient = reconciliationQueue.poll();
 
+		// Consider initiating reconciliations with outbounds only
+		for (Map.Entry<Node, Integer> reconCandidate : reconTimes.entrySet()) {
+			Node candidate = reconCandidate.getKey();
+			assert(!inboundPeers.contains(candidate));
+			if (reconCandidate.getValue() >= 8) {
+				reconCandidate.setValue(0);
 				SimpleMessage request = new SimpleMessage(SimpleEvent.RECON_REQUEST, node);
-				((Transport)recepient.getProtocol(FastConfig.getTransport(Peer.pid))).send(node, recepient, request, Peer.pid);
-
-				// Move this node to the end of the queue, schedule the next reconciliation.
-				reconciliationQueue.offer(recepient);
-				nextRecon = curTime + reconciliationInterval;
+				((Transport)candidate.getProtocol(FastConfig.getTransport(Peer.pid))).send(node, candidate, request, Peer.pid);
+				localSetSizeWhenInitiated.put(candidate, reconSets.get(candidate).size());
 			}
+		}
+
+		// Consider responding to reconciliations with inbounds only
+		if (respondWithSketches) {
+			for (Node peer : awaitingSketch) {
+				HashSet<Integer> reconSet = reconSets.get(peer);
+				ArrayListMessage sketch = new ArrayListMessage(SimpleEvent.SKETCH, node, new ArrayList<Integer>(reconSet));
+				((Transport)peer.getProtocol(FastConfig.getTransport(Peer.pid))).send(node, peer, sketch, Peer.pid);
+				reconSet.clear();
+			}
+			awaitingSketch.clear();
+			respondWithSketches = false;
 		}
 
 		// TODO optimization: Sort this by executionTime not to go through entire list every time.
 		// TODO optimziation: since delay is the same for all inbounds, we can store just one entry for them all. All we need is delay.
 		ListIterator<AnnouncementData> iter = scheduledAnnouncements.listIterator();
+		Random random = new Random();
 		while(iter.hasNext()) {
 			AnnouncementData entry = iter.next();
 			if (entry.executionTime < curTime) {
@@ -166,15 +187,7 @@ public class Peer implements CDProtocol, EDProtocol
 				if (peerKnowsTxs.get(recepient).contains(txId)) continue;
 
 				boolean fanout = entry.shouldFanout;
-				int announcedTimes = txAnnouncedTimes.get(txId);
-				if (announcedTimes < fanoutDestinations.out) {
-					fanout = true;
-					txAnnouncedTimes.put(txId, announcedTimes + 1);
-				} else {
-					fanout = false;
-				}
 
-	/*
 				if (inboundPeers.contains(recepient)) {
 					fanout = random.nextInt(100) < (100 * fanoutDestinations.in);
 				} else {
@@ -186,16 +199,10 @@ public class Peer implements CDProtocol, EDProtocol
 						fanout = false;
 					}
 				}
-*/
-				// Peer reconciles
-				if (reconcile && reconSets.containsKey(recepient)) {
-					if (!fanout) {
-						reconSets.get(recepient).add(txId);
-					}
-				}
 
 				if (fanout) {
 					announceTx(node, txId, recepient);
+					reconSets.get(recepient).remove(txId);
 				}
 			}
 		}
@@ -276,10 +283,7 @@ public class Peer implements CDProtocol, EDProtocol
 
 	private void handleReconRequest(Node node, SimpleMessage message) {
 		Node sender = message.getSender();
-		HashSet<Integer> reconSet = reconSets.get(sender);
-		ArrayListMessage sketch = new ArrayListMessage(SimpleEvent.SKETCH, node, new ArrayList<Integer>(reconSet));
-		((Transport)sender.getProtocol(FastConfig.getTransport(Peer.pid))).send(node, sender, sketch, Peer.pid);
-		reconSet.clear();
+		awaitingSketch.add(sender);
 	}
 
 	// Handle a sketch a peer sent us in response to our request. All sketch extension logic and
@@ -289,7 +293,7 @@ public class Peer implements CDProtocol, EDProtocol
 		Set<Integer> localSet = reconSets.get(sender);
 		// Although diff estimation should happen at the sketch sender side, we do it here because
 		// it works in our simplified model, to save extra messages.
-		int localSetSize = localSet.size();
+		int localSetSize = localSetSizeWhenInitiated.get(sender);
 		int remoteSetSize = remoteSet.size();
 		int capacity = Math.abs(localSetSize - remoteSetSize) + (int)(q * Math.min(localSetSize, remoteSetSize)) + c;
 
@@ -339,8 +343,10 @@ public class Peer implements CDProtocol, EDProtocol
 
 		Random random = new Random();
 		for (Node peer : inboundPeers) {
+			if (peer == sender) continue;
 			if (nextFloodInbound < curTime) {
 				nextFloodInbound = curTime + generateRandomDelay(this.delays.in);
+				respondWithSketches = true;
 			}
 			boolean fanout = random.nextInt(100) < (100 * fanoutDestinations.in);
 			scheduleAnnouncement(node, nextFloodInbound, peer, txId, fanout);
@@ -354,7 +360,9 @@ public class Peer implements CDProtocol, EDProtocol
 			if (nextFloodOutboundTime < curTime) {
 				nextFloodOutboundTime = curTime + generateRandomDelay(this.delays.out);
 				nextFloodOutbound.put(peer, nextFloodOutboundTime);
+				reconTimes.put(peer, reconTimes.get(peer) + 1);
 			}
+			if (peer == sender) continue;
 			scheduleAnnouncement(node, nextFloodOutboundTime, peer, txId, fanouts-- > 0);
 		}
 	}
@@ -373,6 +381,10 @@ public class Peer implements CDProtocol, EDProtocol
 			return;
 		}
 		scheduledAnnouncements.add(new AnnouncementData(txId, executionTime, shouldFanout, recepient));
+
+		if (reconcile && reconSets.containsKey(recepient)) {
+			reconSets.get(recepient).add(txId);
+		}
 	}
 
 	private void announceTx(Node node, int txId, Node recepient) {
@@ -395,6 +407,7 @@ public class Peer implements CDProtocol, EDProtocol
 		peerKnowsTxs.put(peer, new HashSet<>());
 		if (reconcile && peerSupportsRecon) {
 			if (outbound) { reconciliationQueue.offer(peer); }
+			if (outbound) reconTimes.put(peer, 0);
 			reconSets.put(peer, new HashSet<>());
 		}
 		if (outbound) nextFloodOutbound.put(peer, 0L);

@@ -47,11 +47,11 @@ init.2.reconcile_count network.size * RECONCILING_FRACTION
 init.2.reconciliation_interval 4000
 
 init.2.in_fanout_fraction_erlay 0.1
-init.2.out_fanout_erlay 1
+init.2.out_fanout_erlay 3
 
 # Erlay coefficients
-init.2.q 0.1
-init.2.c 100
+init.2.q 0.01
+init.2.c 5
 
 init.sch1 CDScheduler
 init.sch1.protocol 1
