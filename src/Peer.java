@@ -106,6 +106,8 @@ public class Peer implements CDProtocol, EDProtocol
 
 	private HashMap<Node, Integer> localSetSizeWhenInitiated;
 
+	private HashSet<Integer> txReconciledByInitiator;
+
 	/* Stats */
 	public Stats stats;
 
@@ -125,6 +127,7 @@ public class Peer implements CDProtocol, EDProtocol
 		reconTimes = new HashMap<>();
 		awaitingSketch = new HashSet<>();
 		localSetSizeWhenInitiated = new HashMap<>();
+		txReconciledByInitiator = new HashSet<>();
 	}
 
 	class AnnouncementData
@@ -188,17 +191,17 @@ public class Peer implements CDProtocol, EDProtocol
 
 				boolean fanout = entry.shouldFanout;
 
-				if (inboundPeers.contains(recepient)) {
-					fanout = random.nextInt(100) < (100 * fanoutDestinations.in);
-				} else {
-					int announcedTimes = txAnnouncedTimes.get(txId);
-					if (announcedTimes < fanoutDestinations.out + 1) {
-						fanout = true;
-						txAnnouncedTimes.put(txId, announcedTimes + 1);
-					} else {
-						fanout = false;
-					}
-				}
+				// if (inboundPeers.contains(recepient)) {
+				// 	fanout = random.nextInt(100) < (100 * fanoutDestinations.in);
+				// } else {
+				// 	int announcedTimes = txAnnouncedTimes.get(txId);
+				// 	if (announcedTimes < destinationTargets) {
+				// 		fanout = true;
+				// 		txAnnouncedTimes.put(txId, announcedTimes + 1);
+				// 	} else {
+				// 		fanout = false;
+				// 	}
+				// }
 
 				if (fanout) {
 					announceTx(node, txId, recepient);
@@ -306,6 +309,7 @@ public class Peer implements CDProtocol, EDProtocol
 			} else {
 				++usMiss;
 				receiveAnnoucement(node, txId, sender);
+				txReconciledByInitiator.add(txId);
 			}
 		}
 
@@ -353,8 +357,10 @@ public class Peer implements CDProtocol, EDProtocol
 		}
 
 		ArrayList<Node> outboundPeersCopy = new ArrayList<Node>(outboundPeers);
-		Collections.shuffle(outboundPeersCopy) ;
-		int fanouts = fanoutDestinations.out;
+		Collections.shuffle(outboundPeersCopy);
+		int fanouts = 1;
+		if (txReconciledByInitiator.contains(txId)) fanouts = 4;
+		// int fanouts = fanoutDestinations.out;
 		for (Node peer : outboundPeersCopy) {
 			long nextFloodOutboundTime = nextFloodOutbound.get(peer);
 			if (nextFloodOutboundTime < curTime) {
