@@ -191,17 +191,17 @@ public class Peer implements CDProtocol, EDProtocol
 
 				boolean fanout = entry.shouldFanout;
 
-				// if (inboundPeers.contains(recepient)) {
-				// 	fanout = random.nextInt(100) < (100 * fanoutDestinations.in);
-				// } else {
-				// 	int announcedTimes = txAnnouncedTimes.get(txId);
-				// 	if (announcedTimes < destinationTargets) {
-				// 		fanout = true;
-				// 		txAnnouncedTimes.put(txId, announcedTimes + 1);
-				// 	} else {
-				// 		fanout = false;
-				// 	}
-				// }
+				if (inboundPeers.contains(recepient)) {
+					fanout = random.nextInt(100) < (100 * fanoutDestinations.in);
+				} else {
+					int announcedTimes = txAnnouncedTimes.get(txId);
+					if (announcedTimes < fanoutDestinations.out) {
+						fanout = true;
+						txAnnouncedTimes.put(txId, announcedTimes + 1);
+					} else {
+						fanout = false;
+					}
+				}
 
 				if (fanout) {
 					announceTx(node, txId, recepient);
@@ -268,7 +268,7 @@ public class Peer implements CDProtocol, EDProtocol
 			txAnnouncedTimes.put(txId, 1);
 		} else {
 			++stats.duplicateAnno;
-			// txAnnouncedTimes.put(txId, txAnnouncedTimes.get(txId) + 1);
+			txAnnouncedTimes.put(txId, txAnnouncedTimes.get(txId) + 1);
 		}
 
 		++stats.invs;
@@ -359,8 +359,6 @@ public class Peer implements CDProtocol, EDProtocol
 		ArrayList<Node> outboundPeersCopy = new ArrayList<Node>(outboundPeers);
 		Collections.shuffle(outboundPeersCopy);
 		int fanouts = 1;
-		if (txReconciledByInitiator.contains(txId)) fanouts = 4;
-		// int fanouts = fanoutDestinations.out;
 		for (Node peer : outboundPeersCopy) {
 			long nextFloodOutboundTime = nextFloodOutbound.get(peer);
 			if (nextFloodOutboundTime < curTime) {
